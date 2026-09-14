@@ -251,7 +251,17 @@ public:
 public:
     // virtual functions
     // NOLINTBEGIN
+    // POINTEE DEFINITION FIX: `~RakPeer()` cannot stay `= default` on libc++:
+    // RakPeer owns `unique_ptr<ShadowBanList>` and libc++ requires the pointee
+    // to be complete at the destructor's point of instantiation (MSVC relaxes
+    // this). ShadowBanList.h also includes RakPeer.h, so including it here
+    // would cycle. Declare the destructor and define it out-of-line in
+    // BdsDestructors.cpp (non-MSVC) where ShadowBanList is complete.
+#if defined(_MSC_VER)
     virtual ~RakPeer() /*override*/ = default;
+#else
+    virtual ~RakPeer() /*override*/;
+#endif
 
     virtual void InitializeConfiguration(::std::unique_ptr<::RakNet::ShadowBanList> banList) /*override*/;
 

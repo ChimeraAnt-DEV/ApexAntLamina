@@ -95,7 +95,7 @@ struct TypedStorageImpl {
 
 template <size_t A, size_t S, class T>
 struct TypedStorageType {
-    using Type = typename TypedStorageImpl<A, S, typename std::remove_cv_t<T>>;
+    using Type = TypedStorageImpl<A, S, std::remove_cv_t<T>>;
 };
 template <size_t A, size_t S, class T>
     requires(std::is_reference_v<T> || (std::is_scalar_v<T> && !std::is_member_pointer_v<T>))

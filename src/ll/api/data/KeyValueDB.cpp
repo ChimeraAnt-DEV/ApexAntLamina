@@ -41,11 +41,17 @@ public:
             filterPolicy.reset(leveldb::NewBloomFilterPolicy(bloomFilterBit));
             options.filter_policy = filterPolicy.get();
         }
-        auto status = leveldb::DB::Open(options, path, std::out_ptr(db));
+        auto open_db = [&] {
+            leveldb::DB* raw{};
+            auto         status = leveldb::DB::Open(options, path, &raw);
+            db.reset(raw);
+            return status;
+        };
+        auto status = open_db();
         if (fixIfError && status.IsCorruption()) {
             status = leveldb::RepairDB(path, options);
             if (status.ok()) {
-                status = leveldb::DB::Open(options, path, std::out_ptr(db));
+                status = open_db();
             }
         }
         if (!status.ok()) {

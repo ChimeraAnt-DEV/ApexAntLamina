@@ -2,6 +2,18 @@
 
 #include "mc/_HeaderOutputPredefine.h"
 
+// POINTEE DEFINITION FIX: MinecraftCommands stores unique_ptr<Command>,
+// unique_ptr<CommandRegistry>, unique_ptr<CommandOutputSender> and
+// unique_ptr<DeferredCommandBase> and declares `virtual ~MinecraftCommands() =
+// default;`. libc++ requires those pointees to be complete at the destructor's
+// point of instantiation (unlike MSVC's relaxed unique_ptr). Include their
+// definitions; none of them include this header (DeferredCommandBase only
+// forward-declares MinecraftCommands), so there is no cycle.
+#include "mc/server/commands/Command.h"
+#include "mc/server/commands/CommandOutputSender.h"
+#include "mc/server/commands/CommandRegistry.h"
+#include "mc/server/commands/DeferredCommandBase.h"
+
 // auto generated inclusion list
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/server/commands/CommandOutputType.h"

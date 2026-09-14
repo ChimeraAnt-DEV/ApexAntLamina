@@ -317,6 +317,10 @@ using FileHandleT = void*;
 #define LL_ALLOCATOR
 #endif
 
+#ifndef LL_NOTHROW_ALLOCATOR
+#define LL_NOTHROW_ALLOCATOR
+#endif
+
 #ifndef LL_FORCEINLINE
 #define LL_FORCEINLINE inline __attribute__((always_inline))
 #endif

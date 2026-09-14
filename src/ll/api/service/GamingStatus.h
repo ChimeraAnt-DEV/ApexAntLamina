@@ -13,4 +13,6 @@ enum class GamingStatus : int {
 
 LLNDAPI GamingStatus getGamingStatus();
 
+LLNDAPI void setGamingStatus(GamingStatus value);
+
 } // namespace ll

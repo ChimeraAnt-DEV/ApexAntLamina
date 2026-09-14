@@ -5,7 +5,7 @@ namespace Bedrock::Threading {
 void PrioritizeSharedOwnership::lock_shared() {
     std::shared_lock lk(mMutex);
     for (;;) {
-        uint64_t count = mReaderCount.load(std::memory_order_acquire);
+        uint64 count = mReaderCount.load(std::memory_order_acquire);
         if ((count & mWaitForZeroBit) == 0) {
             if (mReaderCount.compare_exchange_weak(count, count + 1)) break;
         } else {
@@ -38,7 +38,7 @@ void PrioritizeSharedOwnership::unlock_shared() {
 void PrioritizeSharedOwnership::lock() {
     std::unique_lock lock(mMutex);
     for (;;) {
-        uint64_t value = mReaderCount.load(std::memory_order_acquire);
+        uint64 value = mReaderCount.load(std::memory_order_acquire);
         if (value != 0) {
             if (mReaderCount.compare_exchange_weak(value, value | mWaitForZeroBit)) {
                 mZeroReaders.wait(lock, [this] {

@@ -62,7 +62,7 @@ public:
 
 } // namespace
 
-IMemoryAllocator& getDefaultAllocator() {
+::Bedrock::Memory::IMemoryAllocator& getDefaultAllocator() {
     static FallbackAllocator ins;
     return ins;
 }

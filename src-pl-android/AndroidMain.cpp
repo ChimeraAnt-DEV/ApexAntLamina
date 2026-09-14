@@ -50,6 +50,7 @@
 namespace ll::android {
 void setAndroidPlConfig(std::filesystem::path const& root, bool colorLog, int logLevel);
 std::filesystem::path const& getSelfModRoot() noexcept;
+void setSelfModRoot(std::filesystem::path root) noexcept;
 }
 
 namespace {
@@ -58,7 +59,7 @@ constexpr const char* kLogTag = "ApexAntLamina";
 
 void logException(std::exception_ptr eptr) noexcept {
     try {
-        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "%s", error_utils::makeExceptionString(eptr).c_str());
+        __android_log_print(ANDROID_LOG_ERROR, kLogTag, "%s", ll::error_utils::makeExceptionString(eptr).c_str());
     } catch (...) {
         __android_log_print(ANDROID_LOG_ERROR, kLogTag, "unknown exception");
     }
