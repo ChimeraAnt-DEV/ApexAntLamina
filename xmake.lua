@@ -10,6 +10,11 @@ local is_android  = is_plat("android")
 
 local is_server = is_config("target_type", "server")
 
+-- Filled by LeviLamina's on_load; consumed by the after_build below to
+-- package the Android preload-native mod (levibuildscript modpacker is
+-- desktop-only).
+local modpacker_rule = nil
+
 -- Dependencies from xmake-repo.
 -- Header-only packages: safe for every platform, including the Android
 -- cross-build (no host-arch static/shared libs get installed).
@@ -461,27 +466,37 @@ target("LeviLamina")
             rule_config.modPlatform = "android-arm64"
             rule_config.modVersion  = versionStr
             -- The levibuildscript modpacker rule is desktop-only (levibuildscript
-            -- is not required on Android), so assemble the mod folder ourselves.
-            target:after_build(function (target)
-                import("lib.detect.find_file")
-                local manifest_path = find_file("manifest.json", os.projectdir())
-                if not manifest_path then
-                    return
-                end
-                local outputdir = path.join(os.projectdir(), "bin", rule_config.modName)
-                local oritargetfile = target:targetfile()
-                os.mkdir(outputdir)
-                os.cp(oritargetfile, path.join(outputdir, rule_config.modFile))
-                if manifest_path then
-                    local manifest = io.readfile(manifest_path)
-                    local formatted = manifest:gsub("%${(.-)}", function(var)
-                        return rule_config[var] or ("${" .. var .. "}")
-                    end)
-                    io.writefile(path.join(outputdir, "manifest.json"), formatted)
-                end
-                cprint("${bright green}[Mod Packer]: ${reset}mod generated to " .. outputdir)
-            end)
+            -- is not required on Android), so the actual packaging runs in the
+            -- top-level after_build registered at the bottom of this target.
+            -- We can't call target:after_build() inside on_load (load-time
+            -- proxy has no such method), hence the file-scope local.
+            modpacker_rule = rule_config
         else
             target:add("rules", "@levibuildscript/modpacker", rule_config)
         end
     end)
+
+    -- Android: levibuildscript/modpacker is desktop-only, so assemble the
+    -- LeviLaunchroid mod folder (bin/ApexAntLamina/{manifest.json,
+    -- libpreload-levilamina.so}) here instead of using that rule.
+    if is_android and modpacker_rule then
+        after_build(function (target)
+            local cfg = modpacker_rule
+            import("lib.detect.find_file")
+            local manifest_path = find_file("manifest.json", os.projectdir())
+            if not manifest_path then
+                cprint("${yellow}[Mod Packer]${reset} manifest.json not found; skipping mod packaging")
+                return
+            end
+            local outputdir = path.join(os.projectdir(), "bin", cfg.modName)
+            local oritargetfile = target:targetfile()
+            os.mkdir(outputdir)
+            os.cp(oritargetfile, path.join(outputdir, cfg.modFile))
+            local manifest = io.readfile(manifest_path)
+            local formatted = manifest:gsub("%${(.-)}", function(var)
+                return cfg[var] or ("${" .. var .. "}")
+            end)
+            io.writefile(path.join(outputdir, "manifest.json"), formatted)
+            cprint("${bright green}[Mod Packer]${reset} mod generated to " .. outputdir)
+        end)
+    end
