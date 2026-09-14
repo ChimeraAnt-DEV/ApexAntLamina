@@ -45,11 +45,19 @@ end
 -- Dependencies from levimc-repo.
 add_requires("pcg_cpp v1.0.0")
 add_requires("pfr 2.1.1")
-add_requires("demangler v17.0.7")
-add_requires("levibuildscript 0.6.1")
-add_requires("preloader v1.16.2")
-add_requires("symbolprovider v1.3.0")
 add_requires("trampoline 2024.11.7")
+
+-- levibuildscript / preloader / symbolprovider are desktop-only: the
+-- Android mod gets its runtime (`symbolprovider` hooks, `preloader`
+-- types) from the preloader_android package instead. Their source
+-- (e.g. symbolprovider's SymbolProvider.cpp includes <windows.h>) does
+-- not cross-compile.
+if not is_android then
+    add_requires("levibuildscript 0.6.1")
+    add_requires("preloader v1.16.2")
+    add_requires("symbolprovider v1.3.0")
+    add_requires("demangler v17.0.7")
+end
 
 if is_windows then
 add_requires("libhat 0.4.0")
@@ -152,7 +160,7 @@ target("LeviLamina")
         -- interface used by ApexAntLamina is provided by src-pl-android/pl,
         -- so only the runtime/link hooks come from the package.
         add_packages("preloader_android")
-        add_packages("demangler", "ctre", "trampoline")
+        add_packages("ctre", "trampoline")
     else
         add_packages("demangler", "mimalloc", "ctre", "cpr", "trampoline", "preloader")
     end
