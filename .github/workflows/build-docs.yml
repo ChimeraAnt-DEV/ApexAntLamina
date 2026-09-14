@@ -17,7 +17,7 @@ jobs:
   build-doxygen:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - run: |
           git clone --depth 1 --branch v2.4.1 https://github.com/jothepro/doxygen-awesome-css.git docs/api/doxygen-awesome-css
@@ -39,7 +39,7 @@ jobs:
       - run: |
           tar -cvf artifact.tar -C site/ .
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: doxygen-pages
           path: |
@@ -48,7 +48,7 @@ jobs:
   build-mkdocs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - run: |
           pip install -r docs/main/requirements.txt
@@ -59,7 +59,7 @@ jobs:
       - run: |
           tar -cvf artifact.tar -C site/ .
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: mkdocs-pages
           path: |
@@ -71,7 +71,7 @@ jobs:
       - build-mkdocs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           path: artifacts/
 

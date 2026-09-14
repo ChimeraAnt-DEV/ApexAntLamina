@@ -39,7 +39,7 @@ jobs:
   build-so:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -47,7 +47,7 @@ jobs:
         with:
           xmake-version: branch@master
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/.xmake
@@ -111,7 +111,7 @@ jobs:
           test -f bin/ApexAntLamina/manifest.json
           python3 -c "import json;m=json.load(open('bin/ApexAntLamina/manifest.json'));assert m['entry']=='preload-levilamina.so';assert m['type']=='preload-native';print('OK', m)"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: apexantlamina-preload-android-arm64
           path: |
