@@ -459,7 +459,29 @@ target("LeviLamina")
             rule_config.modName     = "ApexAntLamina"
             rule_config.modFile     = "libpreload-levilamina.so"
             rule_config.modPlatform = "android-arm64"
+            rule_config.modVersion  = versionStr
+            -- The levibuildscript modpacker rule is desktop-only (levibuildscript
+            -- is not required on Android), so assemble the mod folder ourselves.
+            target:after_build(function (target)
+                import("lib.detect.find_file")
+                local manifest_path = find_file("manifest.json", os.projectdir())
+                if not manifest_path then
+                    return
+                end
+                local outputdir = path.join(os.projectdir(), "bin", rule_config.modName)
+                local oritargetfile = target:targetfile()
+                os.mkdir(outputdir)
+                os.cp(oritargetfile, path.join(outputdir, rule_config.modFile))
+                if manifest_path then
+                    local manifest = io.readfile(manifest_path)
+                    local formatted = manifest:gsub("%${(.-)}", function(var)
+                        return rule_config[var] or ("${" .. var .. "}")
+                    end)
+                    io.writefile(path.join(outputdir, "manifest.json"), formatted)
+                end
+                cprint("${bright green}[Mod Packer]: ${reset}mod generated to " .. outputdir)
+            end)
+        else
+            target:add("rules", "@levibuildscript/modpacker", rule_config)
         end
-
-        target:add("rules", "@levibuildscript/modpacker", rule_config)
     end)
