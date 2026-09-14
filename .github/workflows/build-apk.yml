@@ -1,34 +1,40 @@
 name: Build Android APK
 
-# Builds the ApexAntLamina APK: a LeviLaunchroid-compatible host that embeds
-# libpreloader.so (the pl:: runtime, built by the preloader_android xmake
-# package) and the ApexAntLamina preload-native mod (libpreload-levilamina.so)
-# and drives the mod lifecycle through the preloader's Java JNI bridge.
+# DISABLED (see `on:` below): the launcher itself now lives in the separate
+# LeviLaunchroid fork. This file is kept as a skeleton for the future. If this
+# repo ever becomes the launcher host again, uncomment the triggers and restore
+# the original intent: embed libpreloader.so (the pl:: runtime from the
+# preloader_android xmake package) + libpreload-levilamina.so and drive the mod
+# lifecycle through the preloader's Java JNI bridge.
 
 on:
-  pull_request:
-    paths:
-      - .github/workflows/build-apk.yml
-      - src/**
-      - src-server/**
-      - src-client/**
-      - src-pl-android/**
-      - src-pl-export/**
-      - xmake.lua
-      - android/**
-  push:
-    paths:
-      - .github/workflows/build-apk.yml
-      - src/**
-      - src-server/**
-      - src-client/**
-      - src-pl-android/**
-      - src-pl-export/**
-      - xmake.lua
-      - android/**
-    branches:
-      - '**'
-  workflow_dispatch:
+  # DISABLED. The launcher has moved to the separate LeviLaunchroid fork
+  # (ChimeraAnt-DEV/levilaunchroid); this repo only ships the native mod .so.
+  # Re-enable when this repo becomes the launcher host again -- keep the
+  # triggers below.
+  # pull_request:
+  #   paths:
+  #     - .github/workflows/build-apk.yml
+  #     - src/**
+  #     - src-server/**
+  #     - src-client/**
+  #     - src-pl-android/**
+  #     - src-pl-export/**
+  #     - xmake.lua
+  #     - android/**
+  # push:
+  #   paths:
+  #     - .github/workflows/build-apk.yml
+  #     - src/**
+  #     - src-server/**
+  #     - src-client/**
+  #     - src-pl-android/**
+  #     - src-pl-export/**
+  #     - xmake.lua
+  #     - android/**
+  #   branches:
+  #     - '**'
+  # workflow_dispatch:
 
 jobs:
   build-apk:
