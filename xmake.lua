@@ -413,12 +413,22 @@ target("LeviLamina")
 
     on_load(function (target)
         import("core.base.json")
+        local major, minor, patch, suffix
+        local function parse_version(str)
+            return str:match("v?%s*(%d+)%.(%d+)%.(%d+)(.*)")
+        end
         local tag = os.iorun("git describe --tags --abbrev=0 --always")
-        local major, minor, patch, suffix = tag:match("v(%d+)%.(%d+)%.(%d+)(.*)")
+        major, minor, patch, suffix = parse_version(tag or "")
         if not major then
             print("Failed to parse version tag, using version from tooth.json")
-            tag = json.loadfile("tooth.json")["version"]
-            major, minor, patch, suffix = tag:match("(%d+)%.(%d+)%.(%d+)(.*)")
+            local tooth = json.loadfile("tooth.json")
+            if tooth and tooth["version"] then
+                major, minor, patch, suffix = parse_version(tooth["version"])
+            end
+        end
+        if not major then
+            print("Warning: cannot determine LeviLamina version, using 0.0.0")
+            major, minor, patch, suffix = "0", "0", "0", nil
         end
         local versionStr =  major.."."..minor.."."..patch
         if suffix then
