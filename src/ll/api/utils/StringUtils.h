@@ -2,6 +2,7 @@
 
 #include <cerrno>
 #include <charconv>
+#include <concepts>
 #include <cstddef>
 #include <cstdlib>
 #include <stdexcept>
@@ -207,17 +208,48 @@ LLNDAPI std::string
 
 LLNDAPI Expected<bool> svtobool(std::string_view);
 
+template <class T>
+LL_CONSTEXPR23 T strto_impl(char const* begin, char** end) {
+    if constexpr (std::same_as<T, float>) {
+        return std::strtof(begin, end);
+    }
+    if constexpr (std::same_as<T, double>) {
+        return std::strtod(begin, end);
+    }
+    if constexpr (std::same_as<T, long double>) {
+        return std::strtold(begin, end);
+    }
+}
+
 template <class T, class... Args>
 [[nodiscard]] LL_CONSTEXPR23 Expected<T> svtonum(std::string_view str, size_t* idx, Args&&... args) {
     T          result;
-    const auto ans = ::std::from_chars(&*str.begin(), &*str.end(), result, std::forward<Args>(args)...);
-    if (ans.ec != std::errc{}) {
-        return makeErrorCodeError(ans.ec);
+    if constexpr (std::floating_point<T>) {
+        // The Android NDK (r27) libc++ ships no floating-point std::from_chars
+        // overload; fall back to the locale-independent C99 strto* family.
+        auto  begin = &*str.begin();
+        char* end{};
+        result       = strto_impl<T>(begin, &end);
+        std::errc ec = end == begin ? std::errc::invalid_argument
+                                    : (errno == ERANGE ? std::errc::result_out_of_range : std::errc{});
+        errno = 0;
+        if (ec != std::errc{}) {
+            return makeErrorCodeError(ec);
+        }
+        if (idx) {
+            *idx = static_cast<size_t>(end - begin);
+        }
+        return Expected<T>(result);
+    } else {
+        const auto ans = ::std::from_chars(&*str.begin(), &*str.end(), result, std::forward<Args>(args)...);
+        if (ans.ec != std::errc{}) {
+            return makeErrorCodeError(ans.ec);
+        }
+        if (idx) {
+            *idx = static_cast<size_t>(ans.ptr - &*str.begin());
+        }
+        return result;
     }
-    if (idx) {
-        *idx = static_cast<size_t>(ans.ptr - &*str.begin());
-    }
-    return result;
 }
 [[nodiscard]] inline decltype(auto) svtoc(std::string_view str, size_t* idx = nullptr, int base = 10) {
     return svtonum<schar>(str, idx, base);

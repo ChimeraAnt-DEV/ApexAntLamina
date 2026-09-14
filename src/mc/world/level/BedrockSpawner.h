@@ -2,6 +2,15 @@
 
 #include "mc/_HeaderOutputPredefine.h"
 
+// POINTEE DEFINITION FIX: BedrockSpawner stores unique_ptr<ActorSpawnRuleGroup>,
+// unique_ptr<SpawnGroupRegistry> and unique_ptr<br::spawn::EntityTypeCache> and
+// declares `virtual ~BedrockSpawner() = default;`. libc++ requires the pointees
+// to be complete at the destructor's point of instantiation. None of them
+// include this header, so there is no cycle.
+#include "mc/world/actor/ActorSpawnRuleGroup.h"
+#include "mc/world/actor/registry/SpawnGroupRegistry.h"
+#include "mc/world/level/chunk/EntityTypeCache.h"
+
 // auto generated inclusion list
 #include "mc/deps/core/string/HashedString.h"
 #include "mc/world/level/SpawnSettings.h"

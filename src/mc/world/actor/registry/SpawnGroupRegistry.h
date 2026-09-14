@@ -2,6 +2,13 @@
 
 #include "mc/_HeaderOutputPredefine.h"
 
+// POINTEE DEFINITION FIX: SpawnGroupRegistry declares `virtual
+// ~SpawnGroupRegistry() = default;` and owns a vector<unique_ptr<SpawnGroupData>>.
+// libc++ requires SpawnGroupData to be complete at the destructor's point of
+// instantiation (MSVC relaxes this). SpawnGroupData.h does not include this
+// header, so there is no cycle.
+#include "mc/world/actor/SpawnGroupData.h"
+
 // auto generated forward declare list
 // clang-format off
 class BiomeFilterGroup;

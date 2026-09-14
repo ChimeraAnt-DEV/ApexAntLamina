@@ -139,6 +139,12 @@
 // stb C++ Library
 #include "stb_truetype.h"
 
+// Forward declarations of Windows/BDS-only types. On Android these are
+// neither defined by the NDK nor referenced by the launcher runtime, but the
+// (non-enum) declarations below are still required because auto-generated
+// BDS headers reference them (TypedStorage sizing, Bedrock::typeid_storage_impl).
+// Only bare `enum`/`typedef enum ... ;` forward declarations are forbidden by
+// ISO C++, so those are guarded out on non-MSVC (clang/gcc reject them).
 struct HWND__;
 struct HKEY__;
 struct HICON__;
@@ -147,8 +153,12 @@ struct _TP_CALLBACK_INSTANCE;
 struct _TP_WAIT;
 struct _TP_WORK;
 struct _TP_TIMER;
+#if defined(_MSC_VER)
 typedef long HRESULT;
 enum _WINHTTP_WEB_SOCKET_BUFFER_TYPE;
+#else
+typedef long HRESULT;
+#endif
 struct in6_addr;
 struct in_addr;
 struct sockaddr;
@@ -166,6 +176,7 @@ struct _INITIALIZE_OPTIONS;
 struct HC_CALL;
 struct tagWNDCLASSEXW;
 struct HINSTANCE__;
+namespace br::spawn { class EntityTypeCache; }
 namespace ll {
     template <size_t A, size_t S>
     struct TypedStorageType<A, S, ::tagPOINT> {
@@ -173,6 +184,15 @@ namespace ll {
     };
     template <size_t A, size_t S>
     struct TypedStorageType<A, S, ::std::unique_ptr<::evp_md_ctx_st>> {
+        using Type = UntypedStorage<A, S>;
+    };
+    // br::spawn::EntityTypeCache owns a std::vector<br::spawn::EntityType>.
+    // The EntityType definition is not shipped with the headers (it lives in
+    // the game binary), so libc++ cannot instantiate ~EntityTypeCache. The
+    // field is never referenced from inline code, so treat it as opaque
+    // storage exactly like the other unavailable unique_ptr pointees above.
+    template <size_t A, size_t S>
+    struct TypedStorageType<A, S, ::std::unique_ptr<::br::spawn::EntityTypeCache>> {
         using Type = UntypedStorage<A, S>;
     };
     class type_id_ref;
@@ -186,7 +206,11 @@ namespace Bedrock {
     ::ll::type_id_ref typeid_storage_impl();
 }
 
-// DirectX definitions
+// DirectX definitions. The bare `typedef enum ...;` forward declarations rely
+// on a relaxed-typedef MSVC extension that clang/gcc reject, so they are
+// omitted on non-MSVC targets; the D3D structs they alias are only ever used
+// through pointers here.
+#if defined(_MSC_VER)
 typedef enum D3D_FEATURE_LEVEL;
 typedef enum DXGI_SWAP_EFFECT;
 typedef enum DXGI_FORMAT;
@@ -195,6 +219,7 @@ typedef enum D3D_SHADER_MODEL;
 typedef enum D3D_DRIVER_TYPE;
 typedef enum D3D12_RESOURCE_STATES;
 typedef enum D3D12_RESOURCE_FLAGS;
+#endif
 struct IDXGISwapChain3;
 struct ID3D11Texture2D;
 struct ID3D11Device;
@@ -229,8 +254,10 @@ struct D3D12_FEATURE_DATA_D3D12_OPTIONS {};
 #endif
 
 // Nvidia SDK definitions
+#if defined(_MSC_VER)
 typedef enum NVSDK_NGX_Logging_Level;
 typedef enum NVSDK_NGX_Feature;
+#endif
 
 // OpenSSL definitions
 struct ssl_ctx_st;
@@ -254,6 +281,46 @@ template<typename It, typename Type>
 class ComponentStorageIterator;
 }
 }
+
+// MSVC STL implementation-detail iterator/container types that the
+// Bedrock-Client-Header generator leaked into auto-generated BDS headers
+// (e.g. `::std::_Tree_const_iterator<::std::_Tree_val<::std::_Tree_simple_types<P>>>`).
+// Only the relaxed-typedef MSVC STL accepts those as spelled; on libc++/libstdc++
+// these spellings do not exist. Map them to the corresponding real container
+// iterators so the headers type-check on non-MSVC toolchains. The aliases are
+// only ever used in *declarations* of the desktop BDS emulation API, which is
+// not built on non-Windows targets, so ABI fidelity is irrelevant here.
+#if !defined(_MSC_VER)
+#include <list>
+#include <map>
+#include <vector>
+namespace std {
+template <class T>
+using _Simple_types          = T;
+template <class T>
+using _Vector_val            = T;
+template <class T>
+using _Vector_const_iterator = typename std::vector<T>::const_iterator;
+template <class T>
+using _Vector_iterator       = typename std::vector<T>::iterator;
+template <class T>
+using _List_simple_types     = T;
+template <class T>
+using _List_val              = T;
+template <class T>
+using _List_const_iterator   = typename std::list<T>::const_iterator;
+template <class T>
+using _List_iterator         = typename std::list<T>::iterator;
+template <class Pair>
+using _Tree_simple_types     = Pair;
+template <class Pair>
+using _Tree_val              = Pair;
+template <class Pair>
+using _Tree_const_iterator   = typename std::map<typename Pair::first_type, typename Pair::second_type>::const_iterator;
+template <class Pair>
+using _Tree_iterator         = typename std::map<typename Pair::first_type, typename Pair::second_type>::iterator;
+} // namespace std
+#endif
 
 #ifndef cerealizer
 // Compile-only placeholder for generated headers; does not describe the game's ABI.

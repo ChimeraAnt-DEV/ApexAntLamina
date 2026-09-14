@@ -21,6 +21,8 @@
 
 namespace ll::i18n {
 
+LLNDAPI std::string& defaultLocaleCode();
+
 LLNDAPI std::string_view getDefaultLocaleCode();
 
 class I18n {

@@ -8,6 +8,7 @@
 // the self mod dir as `<modsRoot>/<manifest.name>`.
 
 #include "ll/api/Versions.h"
+#include "ll/api/i18n/I18n.h"
 #include "ll/api/io/FileUtils.h"
 #include "ll/api/mod/Mod.h"
 #include "ll/api/mod/NativeMod.h"

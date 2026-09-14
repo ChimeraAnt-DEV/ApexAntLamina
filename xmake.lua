@@ -24,23 +24,27 @@ add_requires("parallel-hashmap v2.0.0")
 add_requires("concurrentqueue v1.0.4")
 add_requires("stb 2025.03.14")
 
-if is_linux or (not is_android) then
-    add_requires("type_safe v0.2.4")
-end
+-- Deserializer/reflection/cereal headers used across the public API and the
+-- PCH (src/mc/_HeaderOutputPredefine.h). These are header-only on every
+-- platform, so they are installed on Android as well.
+add_requires("type_safe v0.2.4")
+add_requires("magic_enum v0.9.7")
+add_requires("nlohmann_json v3.12.0")
+add_requires("rapidjson 2025.02.05")
+
+-- fmt/leveldb cross-compile for Android with the NDK toolchain (the earlier
+-- "skipping incompatible" failures happened only because set_toolchains("clang")
+-- pinned the host clang; with the ndk toolchain the archives build for
+-- aarch64), so they are enabled on every platform.
+add_requires("fmt 11.2.0")
+add_requires("leveldb 1.23")
 
 if not is_android then
-    -- Compiled libs from the official xmake-repo. On Android these would be
-    -- installed as host-arch archives and fail the NDK cross-arch link
-    -- (/usr/bin/ld: skipping incompatible libfmt.a). The preloader-android
-    -- runtime vendors fmt/nlohmann_json/Boost::pfr/magic_enum into
-    -- libpreloader.so (FetchContent in its CMakeLists.txt), so the mod must
-    -- NOT compile/link its own copies.
-    add_requires("fmt 11.2.0")
-    add_requires("leveldb 1.23")
-    add_requires("magic_enum v0.9.7")
-    add_requires("nlohmann_json v3.12.0")
-    add_requires("rapidjson 2025.02.05")
+    -- mimalloc is only used by ModifyMemoryAllocator.cpp, which is excluded
+    -- on Android (Windows BDS symbol hook replaced by MemoryOperators_android).
     add_requires("mimalloc v3.5.0")
+    -- cpr/libcurl does not cross-build for Android (openssl link failures),
+    -- and the only consumer (ll/core/SentryUploader.cpp) is excluded there.
     add_requires("cpr[ssl=y] 1.11.1")
 end
 
@@ -54,11 +58,16 @@ add_requires("trampoline 2024.11.7")
 -- types) from the preloader_android package instead. Their source
 -- (e.g. symbolprovider's SymbolProvider.cpp includes <windows.h>) does
 -- not cross-compile.
+--
+-- demangler is shared by both: ll/api/memory/Symbol.cpp compiles it on
+-- every platform (it cross-builds for Android) to produce the `_sym`
+-- demangled names used in symbols like the _HeaderOutputPredefine.h,
+-- so it is listed outside the is_android guard.
+add_requires("demangler v17.0.7")
 if not is_android then
     add_requires("levibuildscript 0.6.1")
     add_requires("preloader v1.16.2")
     add_requires("symbolprovider v1.3.0")
-    add_requires("demangler v17.0.7")
 end
 
 if is_windows then
@@ -70,11 +79,11 @@ if is_linux then
 set_toolchains("clang")
 end
 
-if is_android then
--- Android NDK clang. Kept out of the clang toolchain block above to avoid
--- confusing the standard `is_linux` path.
-set_toolchains("clang")
-end
+-- NOTE: On Android we deliberately do NOT set_toolchains("clang"): the
+-- xmake android platform already loads the `ndk` toolchain (NDK LLVM clang
+-- with the aarch64 target), and pinning the generic `clang` toolchain here
+-- makes xmake pick the host clang (x86_64-pc-linux-gnu) instead, which
+-- cannot build the arm64 .so (missing libc++/optional, wrong triple).
 
 if has_config("tests") then
     add_requires("gtest")
@@ -161,45 +170,45 @@ target("LeviLamina")
         -- Config.hpp, ...) which would collide with the C shim.  The mod
         -- interface used by ApexAntLamina is provided by src-pl-android/pl,
         -- so only the runtime/link hooks come from the package.
+        -- demangler is still needed: ll/api/memory/Symbol.cpp and the PCH
+        -- compile the macro-literal symbols on Android too.
         add_packages("preloader_android")
-        add_packages("ctre", "trampoline")
+        add_packages("demangler", "ctre", "trampoline")
     else
         add_packages("demangler", "mimalloc", "ctre", "cpr", "trampoline", "preloader")
     end
     local common_packages = {
         "entt",
         "expected-lite",
+        "fmt",
         "gsl",
         "glm",
+        "leveldb",
+        "magic_enum",
+        "nlohmann_json",
         "pcg_cpp",
         "pfr",
         "parallel-hashmap",
         "concurrentqueue",
+        "rapidjson",
         "stb",
-        {public = true}
+        "type_safe",
     }
+    -- symbolprovider stays desktop-only: it is replaced by the Android shim.
     if not is_android then
-        -- Compiled libs are desktop-only; on Android they are skipped at
-        -- add_requires time and would otherwise break add_packages here.
-        local desktop_packages = {
-            "fmt",
-            "leveldb",
-            "magic_enum",
-            "nlohmann_json",
-            "rapidjson",
-            "type_safe",
-            "symbolprovider",
-        }
-        for _, p in ipairs(desktop_packages) do
-            table.insert(common_packages, #common_packages, p)
-        end
+        table.insert(common_packages, "symbolprovider")
     end
     if is_windows then
         -- BDS runtime data (headers + bedrock_runtime_data) is a Windows-only
         -- artifact; it has no Android repackage.
         table.insert(common_packages, 14, "bedrockdata")
     end
-    add_packages(common_packages)
+    -- `{public = true}` is the extra config (visibility) for the whole
+    -- package set and must be passed as a trailing argument, not as an array
+    -- element. When embedded in the list, xmake treats the table as a package
+    -- named value and crashes in orderpkgs() with
+    -- `attempt to call a nil value (method 'find')`.
+    add_packages(common_packages, {public = true})
     add_defines("LL_EXPORT")
     add_defines(
         "FMT_USE_FULL_CACHE_DRAGONBOX=1",
@@ -336,6 +345,21 @@ target("LeviLamina")
         -- base; the Android shim uses dladdr() because the main executable
         -- is the game, not ApexAntLamina. Exclude the linux implementation.
         remove_files("src/ll/api/utils/SystemUtils_linux.cpp")
+        -- SentryUploader is a Windows crash-dump uploader (cpr/zlib, used by
+        -- CrashLogger_win.cpp). Not referenced by the Android shim.
+        remove_files("src/ll/core/SentryUploader.cpp")
+        -- ModifyMemoryAllocator swaps Bedrock's allocator through an MSVC
+        -- mangled-symbol hook; on Android MemoryOperators_android.cpp routes
+        -- new/delete to the platform allocator instead.
+        remove_files("src/ll/core/tweak/ModifyMemoryAllocator.cpp")
+        -- The src/mc/**/*.cpp emulation layer only ever compiled on Windows
+        -- (MSVC STL, prelink.exe BDS relocations, winsock2.h). It is desktop
+        -- BDS symbol emulation; on Android the launcher resolves game symbols
+        -- from libminecraftpe.so via dlsym (pl_symbol_provider.cpp) and the
+        -- ll::service layer is replaced by Bedrock_android.cpp, so none of
+        -- these translation units are needed. Their <mc/*.h> header types are
+        -- still used throughout the public API and remain compiled.
+        remove_files("src/mc/**.cpp")
     end
 
     if has_config("tests") then
