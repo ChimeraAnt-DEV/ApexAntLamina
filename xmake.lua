@@ -10,10 +10,7 @@ local is_android  = is_plat("android")
 
 local is_server = is_config("target_type", "server")
 
--- Filled by LeviLamina's on_load; consumed by the after_build below to
--- package the Android preload-native mod (levibuildscript modpacker is
--- desktop-only).
-local modpacker_rule = nil
+
 
 -- Dependencies from xmake-repo.
 -- Header-only packages: safe for every platform, including the Android
@@ -422,17 +419,12 @@ target("LeviLamina")
         local function parse_version(str)
             return str:match("v?%s*(%d+)%.(%d+)%.(%d+)(.*)")
         end
-        local tag = os.iorun("git describe --tags --abbrev=0 --always")
-        major, minor, patch, suffix = parse_version(tag or "")
+        -- CI clones are tag-less (no `git describe`); read the version from
+        -- tooth.json and fall back to 0.0.0. Never shell out to git here.
+        local tooth = json.loadfile("tooth.json")
+        local version = tooth and tooth["version"] or ""
+        major, minor, patch, suffix = parse_version(version)
         if not major then
-            print("Failed to parse version tag, using version from tooth.json")
-            local tooth = json.loadfile("tooth.json")
-            if tooth and tooth["version"] then
-                major, minor, patch, suffix = parse_version(tooth["version"])
-            end
-        end
-        if not major then
-            print("Warning: cannot determine LeviLamina version, using 0.0.0")
             major, minor, patch, suffix = "0", "0", "0", nil
         end
         local versionStr =  major.."."..minor.."."..patch
@@ -450,53 +442,22 @@ target("LeviLamina")
         target:set("configvar", "LL_VERSION_MINOR", minor)
         target:set("configvar", "LL_VERSION_PATCH", patch)
 
-        if not has_config("publish") then
-            local hash = os.iorun("git rev-parse --short HEAD")
-            versionStr = versionStr.."+"..hash:gsub("\n", "")
-        end
-
         local rule_config = {
             modVersion = versionStr,
         }
         if is_android then
-            -- LeviLauncher mod packaging: the preloader reads `manifest.json`
-            -- next to <name>/<entry> (see preloader-android ModManifest.cpp).
+            -- LeviLaunchroid mod packaging is done in CI (bin/ApexAntLamina/):
+            -- the preloader reads `manifest.json` next to <entry> (see
+            -- preloader-android ModManifest.cpp). No levibuildscript rule here:
+            -- it is desktop-only and unavailable on Android.
             rule_config.modName     = "ApexAntLamina"
-            rule_config.modFile     = "libpreload-levilamina.so"
+            rule_config.modFile     = "preload-levilamina.so"
             rule_config.modPlatform = "android-arm64"
             rule_config.modVersion  = versionStr
-            -- The levibuildscript modpacker rule is desktop-only (levibuildscript
-            -- is not required on Android), so the actual packaging runs in the
-            -- top-level after_build registered at the bottom of this target.
-            -- We can't call target:after_build() inside on_load (load-time
-            -- proxy has no such method), hence the file-scope local.
-            modpacker_rule = rule_config
+            -- Keep the rule_config values visible to CI packaging by writing
+            -- them into the target data (CI can't read Lua locals).
+            target:data_set("modpacker", rule_config)
         else
             target:add("rules", "@levibuildscript/modpacker", rule_config)
         end
     end)
-
-    -- Android: levibuildscript/modpacker is desktop-only, so assemble the
-    -- LeviLaunchroid mod folder (bin/ApexAntLamina/{manifest.json,
-    -- libpreload-levilamina.so}) here instead of using that rule.
-    if is_android and modpacker_rule then
-        after_build(function (target)
-            local cfg = modpacker_rule
-            import("lib.detect.find_file")
-            local manifest_path = find_file("manifest.json", os.projectdir())
-            if not manifest_path then
-                cprint("${yellow}[Mod Packer]${reset} manifest.json not found; skipping mod packaging")
-                return
-            end
-            local outputdir = path.join(os.projectdir(), "bin", cfg.modName)
-            local oritargetfile = target:targetfile()
-            os.mkdir(outputdir)
-            os.cp(oritargetfile, path.join(outputdir, cfg.modFile))
-            local manifest = io.readfile(manifest_path)
-            local formatted = manifest:gsub("%${(.-)}", function(var)
-                return cfg[var] or ("${" .. var .. "}")
-            end)
-            io.writefile(path.join(outputdir, "manifest.json"), formatted)
-            cprint("${bright green}[Mod Packer]${reset} mod generated to " .. outputdir)
-        end)
-    end

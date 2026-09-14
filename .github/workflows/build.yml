@@ -80,31 +80,30 @@ jobs:
         run: |
           xmake -v -y -P .
 
-      - name: Repackage the preload-native mod for LeviLauncher
+      - name: Package the preload-native mod for LeviLaunchroid
         run: |
-          # The modpacker rule emits bin/ApexAntLamina/{manifest.json,libpreload-levilamina.so}.
-          # LeviLauncher's manifest `entry` is `preload-levilamina.so`
-          # (matching the packaged file name); drop the `lib` prefix here.
-          if [ -f bin/ApexAntLamina/libpreload-levilamina.so ]; then
-            mv bin/ApexAntLamina/libpreload-levilamina.so bin/ApexAntLamina/preload-levilamina.so
+          set -euo pipefail
+          mkdir -p bin/ApexAntLamina
+          SO=$(find . -path ./android -prune -o -name 'libpreload-levilamina.so' -print | head -n1)
+          if [ -z "$SO" ]; then
+            echo "mod .so not found" >&2
+            exit 1
           fi
+          # LeviLaunchroid preloads `preload-*.so`; the manifest `entry` must
+          # match the packaged file name.
+          cp "$SO" bin/ApexAntLamina/preload-levilamina.so
           python3 - <<'PY'
-          import json, os, sys
+          import json, os
           p = "bin/ApexAntLamina"
-          if not os.path.isdir(p):
-              print("mod dir not produced; listing tree")
-              for root, dirs, files in os.walk("."):
-                  for f in files:
-                      if f.endswith(".so") or f == "manifest.json":
-                          print(os.path.join(root, f))
-              sys.exit(0)
-          pth = os.path.join(p, "manifest.json")
-          m = json.load(open(pth, encoding="utf-8"))
-          if m.get("entry") == "libpreload-levilamina.so":
-              m["entry"] = "preload-levilamina.so"
-              json.dump(m, open(pth, "w", encoding="utf-8"), indent=2)
-              print("manifest entry ->", m["entry"])
+          m = json.load(open("manifest.json", encoding="utf-8"))
+          m = {k: (v if not isinstance(v, str) else v
+                   .replace("${modName}", "ApexAntLamina")
+                   .replace("${modFile}", "preload-levilamina.so"))
+               for k, v in m.items()}
+          json.dump(m, open(os.path.join(p, "manifest.json"), "w", encoding="utf-8"), indent=2)
+          print("manifest:", m)
           PY
+          ls -la bin/ApexAntLamina/
 
       - name: Smoke-test the artifact layout
         run: |
