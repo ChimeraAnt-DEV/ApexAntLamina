@@ -11,22 +11,36 @@ local is_android  = is_plat("android")
 local is_server = is_config("target_type", "server")
 
 -- Dependencies from xmake-repo.
+-- Header-only packages: safe for every platform, including the Android
+-- cross-build (no host-arch static/shared libs get installed).
 add_requires("ctre 3.8.1")
 add_requires("entt v3.15.0")
 add_requires("expected-lite v0.8.0")
-add_requires("fmt 11.2.0")
 add_requires("gsl v4.2.0")
 add_requires("glm 1.0.1")
-add_requires("leveldb 1.23")
-add_requires("magic_enum v0.9.7")
-add_requires("nlohmann_json v3.12.0")
-add_requires("rapidjson 2025.02.05")
-add_requires("type_safe v0.2.4")
-add_requires("mimalloc v3.5.0")
-add_requires("cpr[ssl=y] 1.11.1")
 add_requires("parallel-hashmap v2.0.0")
 add_requires("concurrentqueue v1.0.4")
 add_requires("stb 2025.03.14")
+
+if is_linux or (not is_android) then
+    add_requires("type_safe v0.2.4")
+end
+
+if not is_android then
+    -- Compiled libs from the official xmake-repo. On Android these would be
+    -- installed as host-arch archives and fail the NDK cross-arch link
+    -- (/usr/bin/ld: skipping incompatible libfmt.a). The preloader-android
+    -- runtime vendors fmt/nlohmann_json/Boost::pfr/magic_enum into
+    -- libpreloader.so (FetchContent in its CMakeLists.txt), so the mod must
+    -- NOT compile/link its own copies.
+    add_requires("fmt 11.2.0")
+    add_requires("leveldb 1.23")
+    add_requires("magic_enum v0.9.7")
+    add_requires("nlohmann_json v3.12.0")
+    add_requires("rapidjson 2025.02.05")
+    add_requires("mimalloc v3.5.0")
+    add_requires("cpr[ssl=y] 1.11.1")
+end
 
 -- Dependencies from levimc-repo.
 add_requires("pcg_cpp v1.0.0")
@@ -145,22 +159,31 @@ target("LeviLamina")
     local common_packages = {
         "entt",
         "expected-lite",
-        "fmt",
         "gsl",
         "glm",
-        "leveldb",
-        "magic_enum",
-        "nlohmann_json",
-        "rapidjson",
-        "type_safe",
         "pcg_cpp",
         "pfr",
-        "symbolprovider",
         "parallel-hashmap",
         "concurrentqueue",
         "stb",
         {public = true}
     }
+    if not is_android then
+        -- Compiled libs are desktop-only; on Android they are skipped at
+        -- add_requires time and would otherwise break add_packages here.
+        local desktop_packages = {
+            "fmt",
+            "leveldb",
+            "magic_enum",
+            "nlohmann_json",
+            "rapidjson",
+            "type_safe",
+            "symbolprovider",
+        }
+        for _, p in ipairs(desktop_packages) do
+            table.insert(common_packages, #common_packages, p)
+        end
+    end
     if is_windows then
         -- BDS runtime data (headers + bedrock_runtime_data) is a Windows-only
         -- artifact; it has no Android repackage.
