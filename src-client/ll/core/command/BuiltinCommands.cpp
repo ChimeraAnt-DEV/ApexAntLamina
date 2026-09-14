@@ -8,12 +8,15 @@
 #include "ll/api/event/command/ClientCommandRegisterEvent.h"
 #include "ll/api/event/command/ServerCommandRegisterEvent.h"
 #include "ll/api/event/server/ServerStoppingEvent.h"
+#include "ll/api/service/Bedrock.h"
 
 namespace ll::command {
 
 ll::event::ListenerPtr serverRegisterListener;
 ll::event::ListenerPtr clientRegisterListener;
 ll::event::ListenerPtr serverStoppingListener;
+
+bool isRegisterCommandsAvailable() { return ll::service::getCommandRegistry(false).has_value(); }
 
 void registerCommands() {
     auto& bus = ll::event::EventBus::getInstance();

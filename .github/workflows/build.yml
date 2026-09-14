@@ -1,11 +1,26 @@
+name: Build Android preload mod (.so)
+
+# Builds the ApexAntLamina preload-native mod for LeviLaunchroid /
+# LeviLauncher on Android arm64-v8a. The artifact is a drop-in mod folder:
+#
+#   bin/ApexAntLamina/
+#   ├── manifest.json
+#   └── preload-levilamina.so
+#
+# Users copy the folder into the launcher's mods directory; the launcher
+# reads `manifest.json` (type: preload-native, entry: preload-levilamina.so)
+# and dlopens the .so through the preloader runtime.
+
 on:
   pull_request:
     paths:
       - .github/workflows/build.yml
+      - .github/workflows/build-apk.yml
       - src/**
       - src-server/**
       - src-client/**
-      - src-test/**
+      - src-pl-android/**
+      - src-pl-export/**
       - xmake.lua
   push:
     paths:
@@ -13,93 +28,92 @@ on:
       - src/**
       - src-server/**
       - src-client/**
-      - src-test/**
+      - src-pl-android/**
+      - src-pl-export/**
       - xmake.lua
     branches:
       - '**'
   workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        target_type:
-          - server
-          - client
-        mode:
-          - debug
-          - release
-        tests:
-          - true
-          - false
-    runs-on: windows-latest
+  build-so:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - uses: xmake-io/github-action-setup-xmake@v1
-        # with:
-        #   xmake-version: branch@master
+        with:
+          xmake-version: branch@master
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
-            ~/AppData/Local/.xmake
-          key: xmake-${{ hashFiles('xmake.lua') }}
+            ~/.xmake
+          key: xmake-android-${{ hashFiles('xmake.lua') }}
           restore-keys: |
-            xmake-
+            xmake-android-
 
-      - name: Setup LLVM
-        uses: ZhongRuoyu/setup-llvm@v0
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
         with:
-          llvm-version: 22
+          packages: >-
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;27.0.12077973
+            platform-tools
+
+      - name: Expose NDK path for xmake
+        run: |
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.0.12077973" >> "$GITHUB_ENV"
 
       - run: |
           xmake repo -u
 
-      - run: |
-          xmake f -a x64 -m ${{ matrix.mode }} -p windows -v -y --target_type=${{ matrix.target_type }} --tests=${{ matrix.tests }}
+      - name: Configure (android, arm64-v8a, server surface)
+        run: |
+          xmake f -p android -a arm64-v8a -m release -y --target_type=server
 
-      - run: |
-          xmake -v -y
+      - name: Build
+        run: |
+          xmake -v -y -P .
 
-      - uses: actions/upload-artifact@v7
+      - name: Package the preload-native mod for LeviLaunchroid
+        run: |
+          set -euo pipefail
+          mkdir -p bin/ApexAntLamina
+          SO=$(find . -path ./android -prune -o -name 'libpreload-levilamina.so' -print | head -n1)
+          if [ -z "$SO" ]; then
+            echo "mod .so not found" >&2
+            exit 1
+          fi
+          # LeviLaunchroid preloads `preload-*.so`; the manifest `entry` must
+          # match the packaged file name.
+          cp "$SO" bin/ApexAntLamina/preload-levilamina.so
+          python3 - <<'PY'
+          import json, os
+          p = "bin/ApexAntLamina"
+          m = json.load(open("manifest.json", encoding="utf-8"))
+          m = {k: (v if not isinstance(v, str) else v
+                   .replace("${modName}", "ApexAntLamina")
+                   .replace("${modFile}", "preload-levilamina.so"))
+               for k, v in m.items()}
+          json.dump(m, open(os.path.join(p, "manifest.json"), "w", encoding="utf-8"), indent=2)
+          print("manifest:", m)
+          PY
+          ls -la bin/ApexAntLamina/
+
+      - name: Smoke-test the artifact layout
+        run: |
+          test -f bin/ApexAntLamina/preload-levilamina.so
+          test -f bin/ApexAntLamina/manifest.json
+          python3 -c "import json;m=json.load(open('bin/ApexAntLamina/manifest.json'));assert m['entry']=='preload-levilamina.so';assert m['type']=='preload-native';print('OK', m)"
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}${{ matrix.tests == true && '-tests' || '' }}-windows-x64
+          name: apexantlamina-preload-android-arm64
           path: |
-            bin/
-
-  upload-to-sentry:
-    needs: build
-    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/heads/dependabot')
-    strategy:
-      fail-fast: false
-      matrix:
-        target_type:
-          - server
-          - client
-        mode:
-          - debug
-          - release
-        tests:
-          - true
-          - false
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: matbour/setup-sentry-cli@v3
-        with:
-          token: ${{ SECRETS.SENTRY_TOKEN }}
-          organization: ${{ SECRETS.SENTRY_ORG }}
-          project: ${{ SECRETS.SENTRY_PROJECT }}
-
-      - uses: actions/download-artifact@v8
-        with:
-          name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}${{ matrix.tests == true && '-tests' || '' }}-windows-x64
-          path: artifact
-
-      - run: |
-          sentry-cli debug-files upload --include-sources artifact
+            bin/ApexAntLamina/
+          if-no-files-found: error

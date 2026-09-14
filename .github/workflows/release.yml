@@ -16,7 +16,7 @@ jobs:
           - release
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -24,7 +24,7 @@ jobs:
         # with:
         #   xmake-version: branch@master
 
-      - uses: actions/cache@v6
+      - uses: actions/cache@v4
         with:
           path: |
             ~/AppData/Local/.xmake
@@ -46,7 +46,7 @@ jobs:
       - run: |
           xmake -v -y
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}-windows-x64
           path: |
@@ -65,7 +65,7 @@ jobs:
           - release
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - uses: matbour/setup-sentry-cli@v3
         with:
@@ -73,7 +73,7 @@ jobs:
           organization: ${{ SECRETS.SENTRY_ORG }}
           project: ${{ SECRETS.SENTRY_PROJECT }}
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}-windows-x64
           path: artifact
@@ -86,7 +86,7 @@ jobs:
       contents: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Validate release stuff (tooth.json, CHANGELOG.md, etc.)
         run: |
@@ -118,9 +118,9 @@ jobs:
           - debug
           - release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}-windows-x64
           path: artifact
