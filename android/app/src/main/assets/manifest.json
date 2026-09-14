@@ -1,0 +1,6 @@
+{
+  "name": "ApexAntLamina",
+  "entry": "libpreload-levilamina.so",
+  "version": "0.1.0",
+  "type": "preload-native"
+}

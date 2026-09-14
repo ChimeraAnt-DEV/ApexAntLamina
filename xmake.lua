@@ -6,6 +6,7 @@ add_repositories("levimc-repo " .. (get_config("levimc_repo") or "https://github
 
 local is_windows  = is_plat("windows")
 local is_linux    = is_plat("linux")
+local is_android  = is_plat("android")
 
 local is_server = is_config("target_type", "server")
 
@@ -45,6 +46,12 @@ if is_linux then
 set_toolchains("clang")
 end
 
+if is_android then
+-- Android NDK clang. Kept out of the clang toolchain block above to avoid
+-- confusing the standard `is_linux` path.
+set_toolchains("clang")
+end
+
 if has_config("tests") then
     add_requires("gtest")
 end
@@ -57,6 +64,12 @@ else
     if is_windows then
         add_requires("bedrockdata v26.40.5-client.3")
     end
+end
+
+if is_android then
+    -- The preloader-android runtime (libpreloader.so) publishes the
+    -- pl:: memory/hook/symbol API the LeviLamina shim forwards to.
+    add_requires("preloader_android 0.2.3")
 end
 
 option("levimc_repo")
@@ -85,6 +98,9 @@ option_end()
 if is_server then
     set_defaultarchs("windows|x64")
     set_allowedarchs("windows|x64", "linux|x86_64")
+    if is_android then
+        set_allowedarchs("android|arm64-v8a", "android|armeabi-v7a")
+    end
 else
     set_defaultarchs("windows|x64")
     set_allowedarchs("windows|x64")
@@ -94,12 +110,17 @@ if is_windows and not has_config("vs_runtime") then
     set_runtimes("MD")
 end
 
-if is_linux then
+if is_linux or is_android then
     set_runtimes("c++_shared")
 end
 
 target("LeviLamina")
-    add_rules("@levibuildscript/linkrule")
+    -- linkrule runs the Windows BDS prelink.exe; not applicable to Android
+    -- (no bedrock_runtime_data/prelink.exe in the NDK). The Android mod's
+    -- runtime image needs no relocations against the dedicated server DLL.
+    if not is_android then
+        add_rules("@levibuildscript/linkrule")
+    end
     set_languages("c++20")
     set_kind("shared")
     set_symbols("debug")
@@ -111,8 +132,17 @@ target("LeviLamina")
     add_headerfiles("src/(ll/api/**.h)", "src/(mc/**.h)")
     add_includedirs("src", "$(builddir)/config")
     set_pcxxheader("src/ll/api/Global.h")
-    add_packages("demangler", "mimalloc", "ctre", "cpr", "trampoline", "preloader")
-    add_packages(
+    if is_android then
+        -- The preloader-android runtime ships its own pl:: headers (Mod.hpp,
+        -- Config.hpp, ...) which would collide with the C shim.  The mod
+        -- interface used by ApexAntLamina is provided by src-pl-android/pl,
+        -- so only the runtime/link hooks come from the package.
+        add_packages("preloader_android")
+        add_packages("demangler", "ctre", "trampoline")
+    else
+        add_packages("demangler", "mimalloc", "ctre", "cpr", "trampoline", "preloader")
+    end
+    local common_packages = {
         "entt",
         "expected-lite",
         "fmt",
@@ -126,12 +156,17 @@ target("LeviLamina")
         "pcg_cpp",
         "pfr",
         "symbolprovider",
-        "bedrockdata",
         "parallel-hashmap",
         "concurrentqueue",
         "stb",
         {public = true}
-    )
+    }
+    if is_windows then
+        -- BDS runtime data (headers + bedrock_runtime_data) is a Windows-only
+        -- artifact; it has no Android repackage.
+        table.insert(common_packages, 14, "bedrockdata")
+    end
+    add_packages(common_packages)
     add_defines("LL_EXPORT")
     add_defines(
         "FMT_USE_FULL_CACHE_DRAGONBOX=1",
@@ -211,6 +246,63 @@ target("LeviLamina")
         add_files("src-client/**.cpp")
         add_cxflags("/wd4273")
         add_shflags("/IGNORE:4217")
+    end
+
+    if is_android then
+        -- ApexAntLamina Android shim: pl:: preloader bridge + replaced platform files.
+        add_defines("LL_ANDROID")
+        add_includedirs("src-pl-android", "src-pl-export")
+        add_headerfiles("src-pl-android/(pl/**.h)", "src-pl-android/(ll/**.h)")
+        add_files("src-pl-android/**.cpp")
+        -- PLGetModRegistration: ABI entry that the preloader calls with a
+        -- pl::mod context; needs preloader_android's pl/Mod.hpp.
+        add_files("src-pl-export/mod_registration.cpp")
+        add_packages("preloader_android")
+        add_syslinks("log", "dl", "android", "jnigraphics")
+        add_cxflags("clang::-fno-aligned-allocation")
+        -- LeviLauncher preloads the mod .so named `preload-<...>.so` and the
+        -- manifest `entry` field maps to it (see src/pl/internal/ModManifest.cpp).
+        -- The `lib` prefix follows the Android native library convention so
+        -- AGP can bundle it directly into a host APK.
+        set_filename("libpreload-levilamina.so")
+        -- The desktop server registers game singletons through hooks whose
+        -- target symbols (DedicatedServer, ServerScriptManager, ...) are not
+        -- exported by libminecraftpe.so on Android. The shim replaces them.
+        remove_files(
+            "src-server/ll/api/service/TargetedBedrock.cpp",
+            "src-server/ll/api/service/ServerInfo.cpp",
+            "src-server/ll/api/event/command/ServerCommandRegisterEvent.cpp",
+            "src-server/ll/core/command/BuiltinCommands.cpp"
+        )
+        -- Windows-only: console/AIO hooks, BDS entry.
+        remove_files("src-server/ll/core/main_win.cpp", "src-server/ll/core/io/Output_win.cpp")
+        -- Android replaces the shared self-mod bootstrap (getSelfModIns) with
+        -- LeviLamina_android.cpp because the desktop layout derives the path
+        -- from `getModsRoot()/LeviLamina`, which is not valid under a
+        -- launcher-provided per-mod root.
+        remove_files("src/ll/core/LeviLamina.cpp")
+        -- Server statistics/behavior tweaks that require the BDS dedicated
+        -- server loop symbols; not applicable inside the launcher process.
+        remove_files(
+            "src-server/ll/core/Statistics.cpp",
+            "src-server/ll/core/tweak/ModifyBedrockLogInfo.cpp",
+            "src-server/ll/core/tweak/SimpleServerLogger.cpp",
+            "src-server/ll/core/tweak/ProtocolCompatibility.cpp",
+            "src-server/ll/core/tweak/VulnerabilityFixes.cpp"
+        )
+        -- Shared Bedrock.cpp installs a DBStorage constructor hook carrying a
+        -- reference to a Windows-only symbol; the Android shim supplies
+        -- setDBStorage()/publishGamePointers() instead.
+        remove_files("src/ll/api/service/Bedrock.cpp")
+        -- Shared Config.cpp (LL_CONFIG_IMPL) resolves the config from the
+        -- self mod's config dir; the Android shim adds a pre-launch fallback.
+        -- Both define getLeviConfig()/saveLeviConfig(), so exclude the shared
+        -- implementation.
+        remove_files("src/ll/core/Config.cpp")
+        -- SystemUtils_linux.cpp reads /proc/self/maps to find the module
+        -- base; the Android shim uses dladdr() because the main executable
+        -- is the game, not ApexAntLamina. Exclude the linux implementation.
+        remove_files("src/ll/api/utils/SystemUtils_linux.cpp")
     end
 
     if has_config("tests") then
@@ -317,7 +409,16 @@ target("LeviLamina")
             versionStr = versionStr.."+"..hash:gsub("\n", "")
         end
 
-        target:add("rules", "@levibuildscript/modpacker",{
-               modVersion = versionStr
-           })
+        local rule_config = {
+            modVersion = versionStr,
+        }
+        if is_android then
+            -- LeviLauncher mod packaging: the preloader reads `manifest.json`
+            -- next to <name>/<entry> (see preloader-android ModManifest.cpp).
+            rule_config.modName     = "ApexAntLamina"
+            rule_config.modFile     = "libpreload-levilamina.so"
+            rule_config.modPlatform = "android-arm64"
+        end
+
+        target:add("rules", "@levibuildscript/modpacker", rule_config)
     end)

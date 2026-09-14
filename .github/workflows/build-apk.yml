@@ -1,0 +1,118 @@
+name: Build Android APK
+
+# Builds the ApexAntLamina APK: a LeviLaunchroid-compatible host that embeds
+# libpreloader.so (the pl:: runtime, built by the preloader_android xmake
+# package) and the ApexAntLamina preload-native mod (libpreload-levilamina.so)
+# and drives the mod lifecycle through the preloader's Java JNI bridge.
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-apk.yml
+      - src/**
+      - src-server/**
+      - src-client/**
+      - src-pl-android/**
+      - src-pl-export/**
+      - xmake.lua
+      - android/**
+  push:
+    paths:
+      - .github/workflows/build-apk.yml
+      - src/**
+      - src-server/**
+      - src-client/**
+      - src-pl-android/**
+      - src-pl-export/**
+      - xmake.lua
+      - android/**
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: branch@master
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.xmake
+          key: xmake-apk-${{ hashFiles('xmake.lua') }}
+          restore-keys: |
+            xmake-apk-
+
+      - name: Setup Android SDK + NDK (for xmake C++ build + CMake preloader)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: >-
+            platforms;android-34
+            build-tools;34.0.0
+            ndk;27.0.12077973
+            platform-tools
+
+      - name: Expose NDK path for xmake
+        run: |
+          echo "ANDROID_NDK_ROOT=${ANDROID_HOME}/ndk/27.0.12077973" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Setup Java (for Gradle)
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Provision Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - run: |
+          xmake repo -u
+
+      - name: Build ApexAntLamina preload mod (arm64-v8a)
+        run: |
+          xmake f -p android -a arm64-v8a -m release -y --target_type=server
+          xmake -v -y -P .
+
+      - name: Stage native libraries for the APK
+        run: |
+          set -euo pipefail
+          mkdir -p android/runtime-libs/arm64-v8a
+
+          # 1) ApexAntLamina mod .so
+          MOD_SO=$(find . -path ./android -prune -o -name 'libpreload-levilamina.so' -print | head -n1)
+          if [ -z "$MOD_SO" ]; then
+            echo "mod .so not found" >&2
+            exit 1
+          fi
+          cp "$MOD_SO" android/runtime-libs/arm64-v8a/libpreload-levilamina.so
+
+          # 2) libpreloader.so from the preloader_android xmake package
+          PRELOADER_SO=$(find "$HOME/.xmake/packages" -path '*preloader_android*' -name 'libpreloader.so' | head -n1)
+          if [ -z "$PRELOADER_SO" ]; then
+            echo "libpreloader.so not found in xmake package cache" >&2
+            exit 1
+          fi
+          cp "$PRELOADER_SO" android/runtime-libs/arm64-v8a/libpreloader.so
+
+          ls -la android/runtime-libs/arm64-v8a/
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          gradle --no-daemon assembleDebug
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: apexantlamina-apk-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

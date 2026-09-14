@@ -1,0 +1,12 @@
+# Gradle build outputs
+.gradle/
+build/
+.cxx/
+*.apk
+*.aab
+
+# Native runtime libraries injected by CI
+runtime-libs/arm64-v8a/*.so
+
+# Local properties (sdk.dir)
+local.properties

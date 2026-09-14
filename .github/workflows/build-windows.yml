@@ -1,0 +1,109 @@
+name: Build Windows (server & client)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-windows.yml
+      - .github/workflows/build.yml
+      - .github/workflows/build-apk.yml
+      - src/**
+      - src-server/**
+      - src-client/**
+      - src-test/**
+      - xmake.lua
+  push:
+    paths:
+      - .github/workflows/build-windows.yml
+      - src/**
+      - src-server/**
+      - src-client/**
+      - src-test/**
+      - xmake.lua
+    branches:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        target_type:
+          - server
+          - client
+        mode:
+          - debug
+          - release
+        tests:
+          - true
+          - false
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: xmake-io/github-action-setup-xmake@v1
+        # with:
+        #   xmake-version: branch@master
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/AppData/Local/.xmake
+          key: xmake-${{ hashFiles('xmake.lua') }}
+          restore-keys: |
+            xmake-
+
+      - name: Setup LLVM
+        uses: ZhongRuoyu/setup-llvm@v0
+        with:
+          llvm-version: 22
+
+      - run: |
+          xmake repo -u
+
+      - run: |
+          xmake f -a x64 -m ${{ matrix.mode }} -p windows -v -y --target_type=${{ matrix.target_type }} --tests=${{ matrix.tests }}
+
+      - run: |
+          xmake -v -y
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}${{ matrix.tests == true && '-tests' || '' }}-windows-x64
+          path: |
+            bin/
+
+  upload-to-sentry:
+    needs: build
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/heads/dependabot')
+    strategy:
+      fail-fast: false
+      matrix:
+        target_type:
+          - server
+          - client
+        mode:
+          - debug
+          - release
+        tests:
+          - true
+          - false
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: matbour/setup-sentry-cli@v3
+        with:
+          token: ${{ SECRETS.SENTRY_TOKEN }}
+          organization: ${{ SECRETS.SENTRY_ORG }}
+          project: ${{ SECRETS.SENTRY_PROJECT }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: levilamina-${{ github.sha }}-${{ matrix.target_type }}-${{ matrix.mode }}${{ matrix.tests == true && '-tests' || '' }}-windows-x64
+          path: artifact
+
+      - run: |
+          sentry-cli debug-files upload --include-sources artifact
